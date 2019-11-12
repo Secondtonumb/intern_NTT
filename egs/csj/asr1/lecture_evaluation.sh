@@ -10,19 +10,18 @@
 backend=pytorch # chainer or pytorch
 stage=0         # start from 0 if you need to start from data preparation
 stop_stage=100
-ngpu=1          # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=3          # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=dump    # directory to dump full features
 N=0             # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
-verbose=0       # verbose option
+verbose=1       # verbose option
 resume=         # Resume the training from snapshot
 seed=1          # seed to generate random number
 
 # feature configuration
 do_delta=false
 
-# train_config=conf/train_pytorch_transformer_lr5.0_ag8.v2.yaml
-train_config=conf/train_rnn_t.yaml
+train_config=conf/train_pytorch_transformer_lr5.0_ag8.v2.yaml
 lm_config=conf/lm.yaml
 decode_config=conf/decode.yaml
 
@@ -52,7 +51,9 @@ set -o pipefail
 train_set_ori=train_nodup
 train_set=train_nodup_sp
 train_dev=train_dev
-recog_set="eval1 eval2 eval3"
+wavefile_path="/home/geng17/nas02_home/Dataset/LDNU_eval/"
+#recog_set=$(ls $wavefile_path | sed 's/.wav//')
+recog_set='sp20161013_evalset_0 sp20161013_evalset_1 sp20161013_evalset_2'
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
@@ -83,7 +84,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     # remove duplicated utterances
     utils/data/remove_dup_utts.sh 300 data/train_nodev data/${train_set_ori} # 233hr 36min
 
-    # speed purturbation
+    # speed perturbation
     utils/perturb_data_dir_speed.sh 0.9 data/${train_set_ori} data/temp1
     utils/perturb_data_dir_speed.sh 1.0 data/${train_set_ori} data/temp2
     utils/perturb_data_dir_speed.sh 1.1 data/${train_set_ori} data/temp3
@@ -98,7 +99,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
         utils/fix_data_dir.sh data/${x}
         utils/validate_data_dir.sh data/${x}
     done
-    for x in eval1 eval2 eval3; do
+    for x in eval1 ; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj 10 --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
@@ -217,7 +218,7 @@ fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     echo "stage 5: Decoding"
-    nj=32
+    nj=2
     if [[ $(get_yaml.py ${train_config} model-module) = *transformer* ]]; then
         recog_model=model.last${n_average}.avg.best
         average_checkpoints.py \
@@ -253,7 +254,6 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
             --rnnlm ${lmexpdir}/rnnlm.model.best
 
         score_sclite.sh ${expdir}/${decode_dir} ${dict}
-
     ) &
     pids+=($!) # store background pids
     done
@@ -261,3 +261,14 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     [ ${i} -gt 0 ] && echo "$0: ${i} background jobs are failed." && false
     echo "Finished"
 fi
+
+# if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
+#     echo "stage 6: Generate Subtitles"
+#     for rtask in ${recog_set}; do
+#         decode_dir=decode_${rtask}_$(basename ${decode_config%.*})_${lmtag}
+#         python utils/hyp2srt.py \
+#             --decode_dir ${expdir}/${decode_dir} \
+#             --recording_id ${rtask} \
+#             --mecablize "True"
+#     done
+# fi
