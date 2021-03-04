@@ -10,7 +10,7 @@
 backend=pytorch # chainer or pytorch
 stage=0         # start from 0 if you need to start from data preparation
 stop_stage=100
-ngpu=3          # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=1          # number of gpus ("0" uses cpu, otherwise use gpu)
 debugmode=1
 dumpdir=dump    # directory to dump full features
 N=0             # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -51,10 +51,15 @@ set -o pipefail
 train_set_ori=train_nodup
 train_set=train_nodup_sp
 train_dev=train_dev
-wavefile_path="/home/geng17/nas02_home/Dataset/LDNU_eval/"
-clean_text_mode=False
-# recog_set=$(ls -d "data/sp20161013_evalset_clean_${clean_text_mode}_"* | sed 's/data\///')
-recog_set="iis20160517_5m_clean_False"
+wavefile_path="/home/geng17/nas02_home/Dataset/nuct/"
+wavefile_path="/home/geng17/nas02_home/Dataset/compressed_data/"
+clean_text_mode=True
+# recog_set=$(ls -d "data/sp20161013refined_evalset_clean_${clean_text_mode}"* | sed 's/data\///')
+# recog_set=$(ls -d "data/NUCT講習会オンデマンド教材"*"_clean_"${clean_text_mode} | sed 's/data\///')
+# recog_set="new_eval_1 new_eval_2 new_eval_3"
+# recog_set="iis20160517"
+recog_set="iis20160531 iis20160607 iis20160614 sp20161006 sp20161013 sp20161222 sp20170110 sp20170112"
+
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
@@ -219,7 +224,7 @@ fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     echo "stage 5: Decoding"
-    nj=2
+    nj=1
     if [[ $(get_yaml.py ${train_config} model-module) = *transformer* ]]; then
         recog_model=model.last${n_average}.avg.best
         average_checkpoints.py \
@@ -232,16 +237,18 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     pids=() # initialize pids
     for rtask in ${recog_set}; do
     (
+        echo $rtask
         decode_dir=decode_${rtask}_$(basename ${decode_config%.*})_${lmtag}
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
         splitjson.py --parts ${nj} ${feat_recog_dir}/data.json
 
-        #### use CPU for decoding
+        ### use CPU for decoding
         ngpu=1
 
         ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
+            CUDA_VISIBLE_DEVICES=1 \
             asr_recog.py \
             --config ${decode_config} \
             --ngpu ${ngpu} \
@@ -263,14 +270,26 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     echo "Finished"
 fi
 
-if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
-    echo "stage 6: Generate Subtitles"
-    for rtask in ${recog_set}; do
-        decode_dir=decode_${rtask}_$(basename ${decode_config%.*})_${lmtag}
-        python local/hyp2srt.py \
-            --segment_duration 20 \
-            --decode_dir ${expdir}/${decode_dir} \
-            --recording_id ${rtask} \
-            --mecablize "True"
-    done
-fi
+# if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
+#     echo "stage 6: Generate Subtitles"
+#     for rtask in ${recog_set}; do
+#         decode_dir=decode_${rtask}_$(basename ${decode_config%.*})_${lmtag}
+#         python local/hyp2srt.py \
+#             --segment_duration 20 \
+#             --decode_dir ${expdir}/${decode_dir} \
+#             --recording_id ${rtask} \
+#             --mecablize "True"
+#     done
+# fi
+
+# if [ ${stage} -le 7 ] && [ ${stop_stage} -ge 7 ]; then
+#     echo "stage 7: Refine hyp and evalute again"
+#     for rtask in ${recog_set}; do
+#         decode_dir=decode_${rtask}_$(basename ${decode_config%.*})_${lmtag}
+#         mkdir -p ${expdir}/${decode_dir}_reg_mod/
+#         python local/read_json_result.py \
+#             --input_file  ${expdir}/${decode_dir}/data.json \
+#             --output_path ${expdir}/${decode_dir}_reg_mod/
+#         score_sclite.sh ${expdir}/${decode_dir}_reg_mod/ ${dict}
+#     done
+# fi

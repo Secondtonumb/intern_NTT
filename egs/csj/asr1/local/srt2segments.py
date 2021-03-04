@@ -53,6 +53,7 @@ def generate_utterance(timesegment, text, recording_id):
     start_ = second_timestamp(start)
     end_ = second_timestamp(end)
     plaintext = ''.join(text)
+    plaintext = plaintext.replace('　', '')
     plaintext = list(plaintext)
     label_text = label_zipped(plaintext)
     text_label_container = remove_symbol(label_text)
